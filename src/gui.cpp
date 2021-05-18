@@ -415,6 +415,7 @@ void main_window(Kernel* kernel) {
                                     string path = string(ppath);
                                     if (path.size() && path[path.size() - 1] == '/')
                                         path = path.substr(0, path.size() - 1);
+                                    if (!path.size()) path = pwd;
                                     string name = string(pname);
                                     bool ok = kernel->fs->create(path + "/", name, FS::File_t::File);
                                     if (ok) {
@@ -451,6 +452,7 @@ void main_window(Kernel* kernel) {
                                     string path = string(fpath);
                                     if (path.size() && path[path.size() - 1] == '/')
                                         path = path.substr(0, path.size() - 1);
+                                    if (!path.size()) path = pwd;
                                     string name = string(fname);
                                     kernel->fs->create(path + "/", name, FS::File_t::File);
                                     kernel->fs->write(path + "/" + name, fcont, 0, strlen(fcont));
@@ -480,6 +482,7 @@ void main_window(Kernel* kernel) {
                                     string path = string(dpath);
                                     if (path.size() && path[path.size() - 1] == '/')
                                         path = path.substr(0, path.size() - 1);
+                                    if (!path.size()) path = pwd;
                                     string name = string(dname);
                                     kernel->fs->create(path + "/", name, FS::File_t::Dir);
                                     memset(dname, 0, FS::MAX_NAME_LEN);
@@ -507,6 +510,7 @@ void main_window(Kernel* kernel) {
                                     string path = string(spath);
                                     if (path.size() && path[path.size() - 1] == '/')
                                         path = path.substr(0, path.size() - 1);
+                                    if (!path.size()) path = pwd;
                                     string name = string(sname);
                                     kernel->pg->new_swap(path + "/" + name);
                                     kernel->fs->create_swapspace(path + "/", name);
