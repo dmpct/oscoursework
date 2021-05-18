@@ -1,0 +1,7 @@
+CMakeSettings.json
+/.vs
+/backup
+/build
+/font
+/out
+/test
