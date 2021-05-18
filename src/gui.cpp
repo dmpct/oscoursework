@@ -79,39 +79,6 @@ static string fs_node_full_path{};
 static bool is_open_fstree = true;
 static bool mem_set = false;
 
-void show_file_viewer(Kernel* kernel, bool* popen) {
-    static char* buf_fstree = new char[FS::BLK_SIZE * FS::MAX_N_BLKS];
-    memset(buf_fstree, 0, FS::BLK_SIZE * FS::MAX_N_BLKS);
-    kernel->fs->read(fs_node_full_path, buf_fstree, 0, -1);
-
-    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
-    ImGui::Begin("File Viewer", popen, status_flags);
-    {
-        ImGui::Text("%s", fs_node_full_path);
-        ImGui::Separator();
-        
-        if (ImGui::Button("Edit File")) {
-            edit = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Save")) {
-            if (edit) {
-                kernel->fs->write(fs_node_full_path,
-                    buf_fstree, 0, strlen(buf_fstree));
-            }
-        }
-        ImGui::Separator();
-        ImGui::InputTextMultiline(fs_node_full_path.c_str(),
-            buf_fstree, FS::BLK_SIZE * FS::MAX_N_BLKS,
-            ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
-            edit ? ImGuiInputTextFlags_AllowTabInput :
-            ImGuiInputTextFlags_ReadOnly);
-        delete[] buf_fstree;
-    }
-    ImGui::End();
-}
-    
-
 static vector<const char*> states = {
         "Newborn",
         "Ready",
@@ -385,11 +352,11 @@ void main_window(Kernel* kernel) {
                         ImGui::Text("Process Scheduler: %s", alg.first.c_str());
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(100.0f);
-                        ImGui::Combo(" ", &palg, pas, 5);
+                        ImGui::Combo("##pa", &palg, pas, 5);
                         ImGui::Text("Memory Allocator: %s", alg.second.c_str());
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(100.0f);
-                        ImGui::Combo("  ", &malg, mas, 2);
+                        ImGui::Combo("##ma", &malg, mas, 2);
                     }
                     if (ImGui::CollapsingHeader("New...", ImGuiTreeNodeFlags_None))
                     {
@@ -402,13 +369,13 @@ void main_window(Kernel* kernel) {
                                 static char code[FS::BLK_SIZE] = "";
                                 ImGui::Text("pwd: %s", pwd.c_str());
                                 ImGui::Separator();
-                                ImGui::InputTextWithHint(" ", "Process Path(Blank=pwd)",
+                                ImGui::InputTextWithHint("##pt1", "Process Path(Blank=pwd)",
                                     ppath, FS::MAX_NAME_LEN);
-                                ImGui::InputTextWithHint("  ", "Process Name",
+                                ImGui::InputTextWithHint("##pt2", "Process Name",
                                     pname, FS::MAX_NAME_LEN,
                                     ImGuiInputTextFlags_CallbackCharFilter,
                                     pname_filter);
-                                ImGui::InputTextMultiline("   ", code,
+                                ImGui::InputTextMultiline("##pt3", code,
                                     FS::BLK_SIZE, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
                                     ImGuiInputTextFlags_AllowTabInput);
                                 if (ImGui::Button("Submit")) {
@@ -439,13 +406,13 @@ void main_window(Kernel* kernel) {
                                 static char fcont[FS::BLK_SIZE] = "";
                                 ImGui::Text("pwd: %s", pwd.c_str());
                                 ImGui::Separator();
-                                ImGui::InputTextWithHint(" ", "File Path(Blank=pwd)",
+                                ImGui::InputTextWithHint("##ft1", "File Path(Blank=pwd)",
                                     fpath, FS::MAX_NAME_LEN);
-                                ImGui::InputTextWithHint("  ", "File Name",
+                                ImGui::InputTextWithHint("##ft2", "File Name",
                                     fname, FS::MAX_NAME_LEN,
                                     ImGuiInputTextFlags_CallbackCharFilter,
                                     pname_filter);
-                                ImGui::InputTextMultiline("   ", fcont,
+                                ImGui::InputTextMultiline("##ft3", fcont,
                                     FS::BLK_SIZE, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
                                     ImGuiInputTextFlags_AllowTabInput);
                                 if (ImGui::Button("Submit")) {
@@ -472,9 +439,9 @@ void main_window(Kernel* kernel) {
                                 static char dpath[FS::MAX_NAME_LEN] = "";
                                 ImGui::Text("pwd: %s", pwd.c_str());
                                 ImGui::Separator();
-                                ImGui::InputTextWithHint(" ", "Directory Path(Blank=pwd)",
+                                ImGui::InputTextWithHint("##dd1", "Directory Path(Blank=pwd)",
                                     dpath, FS::MAX_NAME_LEN);
-                                ImGui::InputTextWithHint("  ", "Directory Name",
+                                ImGui::InputTextWithHint("##dd2", "Directory Name",
                                     dname, FS::MAX_NAME_LEN,
                                     ImGuiInputTextFlags_CallbackCharFilter,
                                     pname_filter);
@@ -500,9 +467,9 @@ void main_window(Kernel* kernel) {
                                 static char spath[FS::MAX_NAME_LEN] = "";
                                 ImGui::Text("pwd: %s", pwd.c_str());
                                 ImGui::Separator();
-                                ImGui::InputTextWithHint(" ", "Swapfile Path(Blank=pwd)",
+                                ImGui::InputTextWithHint("##sd1", "Swapfile Path(Blank=pwd)",
                                     spath, FS::MAX_NAME_LEN);
-                                ImGui::InputTextWithHint("  ", "Swapfile Name",
+                                ImGui::InputTextWithHint("##sd2", "Swapfile Name",
                                     sname, FS::MAX_NAME_LEN,
                                     ImGuiInputTextFlags_CallbackCharFilter,
                                     pname_filter);
