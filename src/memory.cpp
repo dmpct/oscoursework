@@ -449,7 +449,6 @@ bool VirtMemoryModel::write(MM::virt_addr addr, char* buf, int size) {
 	bool nfault = true;
 	auto offset = addr % MM::PAGE_SIZE;
 	auto pg = addr / MM::PAGE_SIZE;
-	//cout << "mem write: " << pg << endl;
 	while (offset + size > MM::PAGE_SIZE) {
 		nfault &= write_page(pg, buf, offset, MM::PAGE_SIZE - offset);
 		offset = 0;
