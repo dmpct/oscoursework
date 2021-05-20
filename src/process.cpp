@@ -113,7 +113,7 @@ void Scheduler::wake(int pid) {
 }
 
 double Scheduler::throughput() {
-	return 60 * (doneprs / clock);
+	return clock ? 60 * (doneprs / clock) : 0;
 }
 
 void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after a waiting?
@@ -638,7 +638,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 }
 
 double Scheduler::cpu_rate() {
-	return 1 - (idle_piece / cpu_piece);
+	return cpu_piece ? 1 - (idle_piece / cpu_piece) : 0;
 }
 
 void Scheduler::set_pending(int pid) {

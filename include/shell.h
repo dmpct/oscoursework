@@ -13,18 +13,18 @@ inline void trim(string& s) {
 		}).base(), s.end());
 }
 
-inline string acl_str(int acl) {
-	string res(6, '-');
-	char perms[6] = { 'r', 'w', 'x', 'r', 'w', 'x' };
-	for (int i = 0; i < 6; i++) {
-		int mask = 1 << (5 - i);
-		int bit = acl & mask;
-		if (bit) {
-			res[i] = perms[i];
-		}
-	}
-	return res;
-}
+//inline string acl_str(int acl) {
+//	string res(6, '-');
+//	char perms[6] = { 'r', 'w', 'x', 'r', 'w', 'x' };
+//	for (int i = 0; i < 6; i++) {
+//		int mask = 1 << (5 - i);
+//		int bit = acl & mask;
+//		if (bit) {
+//			res[i] = perms[i];
+//		}
+//	}
+//	return res;
+//}
 
 namespace SH {
 	bool determine_completeness(string command);

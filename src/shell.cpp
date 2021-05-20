@@ -401,7 +401,7 @@ void Shell_CLI::ls(string path, int r, int a, int l) {
 			path + name : path + "/" + name;
 		string desc;
 		if (l) {
-			if (a && ((name.rfind("/") == string::npos && name[0] == '.')
+			if (!a && ((name.rfind("/") == string::npos && name[0] == '.')
 				|| (name.rfind("/") != string::npos && name.substr(name.rfind("/") + 1)[0] == '.'))) {
 				continue;
 			}
@@ -413,18 +413,18 @@ void Shell_CLI::ls(string path, int r, int a, int l) {
 			}
 			if (dir[i].type == FS::File_t::File) {
 				desc = Term::color(Term::fg::white) 
-					+ to_string(inode->i_size) + " Bytes"
+					+ to_string(inode->i_size) + " Bytes "
 					+ Term::color(Term::fg::white)
 					+ acl_str(inode->i_acl);
 				name = Term::color(Term::fg::bright_white)
 					+ Term::color(Term::style::reset) + name;
 				
 			}
-			cout << setw(18) << left << desc << name << endl;
+			cout << setw(26) << left << desc << name << endl;
 			cout << Term::color(Term::style::reset);
 		}
 		else {
-			if (a && ((name.rfind("/") == string::npos && name[0] == '.')
+			if (!a && ((name.rfind("/") == string::npos && name[0] == '.')
 				|| (name.rfind("/") != string::npos && name.substr(name.rfind("/") + 1)[0] == '.'))) {
 				continue;
 			}
@@ -590,10 +590,10 @@ void Shell_CLI::chalg(string p1, string p2) {
 		pa = PR::Algorithm::RR;
 	}
 	else if (p1 == "MQ") {
-		pa == PR::Algorithm::MIXED_QUEUE;
+		pa = PR::Algorithm::MIXED_QUEUE;
 	}
 	else if (p1 == "") {
-		pa == PR::Algorithm::NONE;
+		pa = PR::Algorithm::NONE;
 	}
 	else {
 		cout << "Unknown Process Schedule Mode: " << p1 << endl;

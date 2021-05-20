@@ -510,9 +510,9 @@ void main_window(Kernel* kernel) {
                             ImGui::EndTabBar();
                         }
                     }
-                    if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_None)) {
+                    /*if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_None)) {
 
-                    }
+                    }*/
                     if (ImGui::CollapsingHeader("File System", ImGuiTreeNodeFlags_None)) {
                         ImGui::InputTextWithHint("##cd", "Change Directory", cd_buf,
                             FS::MAX_NAME_LEN);
@@ -615,6 +615,10 @@ void main_window(Kernel* kernel) {
                         }
                         for (auto v : device_stat) {
                             if (ImGui::TreeNode(v.first.c_str())) {
+                                if (ImGui::Button("Unmount")) {
+                                    kernel->del_device(v.first);
+                                }
+                                ImGui::Separator();
                                 if (v.second.size()) {
                                     ImGui::Text("Occupied.");
                                     ImGui::Separator();
@@ -627,12 +631,12 @@ void main_window(Kernel* kernel) {
                                 }
                                 ImGui::TreePop();
                             }
-                            if (ImGui::BeginPopupContextItem("device rightclick"))
+                            /*if (ImGui::BeginPopupContextItem("device rightclick"))
                             {
                                 if (ImGui::Selectable("Unmount")) {
                                     kernel->del_device(v.first);
                                 }
-                            }
+                            }*/
                         }
                     }
                     if (file_editor) {
