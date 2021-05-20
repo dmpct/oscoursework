@@ -222,6 +222,10 @@ void Shell_CLI::show() {
 				this->now();
 			}
 			else if (cmd == "kill") {
+				if (pos == string::npos) {
+					cout << cmd << ": not enough argument." << endl;
+					break;
+				}
 				string args = line.substr(pos + 1);
 				trim(args);
 				try {
@@ -244,8 +248,58 @@ void Shell_CLI::show() {
 			}
 			else if (cmd == "stat") {
 				cout << "System Average Turnaround Time=" 
-					<< setprecision(2) << kernel->statistic() 
+					<< setprecision(2) << fixed << kernel->statistic() 
 					<< endl;
+				cout << "System CPU Usage="
+					<< setprecision(2) << fixed << kernel->sch->cpu_rate()
+					<< "%" << endl;
+				cout << "System Throughtput="
+					<< setprecision(2) << fixed << kernel->sch->cpu_rate()
+					<< "/60Ticks" << endl;
+			}
+			else if (cmd == "chmod") {
+				if (pos == string::npos) {
+					cout << cmd << ": not enough argument." << endl;
+					break;
+				}
+				string args = line.substr(pos + 1);
+				pos = args.find(" ");
+				if (pos == string::npos) {
+					cout << cmd << ": not enough argument." << endl;
+					break;
+				}
+				string path = args.substr(0, pos);
+				string mode = args.substr(pos + 1);
+				trim(mode);
+				trim(args);
+				kernel->fs->chmod(path, stoi(mode));
+			}
+			else if (cmd == "mount") {
+				if (pos == string::npos) {
+					cout << cmd << ": not enough argument." << endl;
+					break;
+				}
+				string args = line.substr(pos + 1);
+				trim(args);
+				kernel->new_device(args);
+			}
+			else if (cmd == "unmount") {
+				if (pos == string::npos) {
+					cout << cmd << ": not enough argument." << endl;
+					break;
+				}
+				string args = line.substr(pos + 1);
+				trim(args);
+				int ret = kernel->del_device(args);
+				if (ret == -1) {
+					cout << "Unknown device name: " << args << endl;
+				}
+				else if (ret == -2) {
+					cout << "Device occupied. Release first." << endl;
+				}
+				else {
+					// pass
+				}
 			}
 			else if (cmd == "chalg") {
 				bool ok = true;
@@ -346,7 +400,11 @@ void Shell_CLI::ls(string path, int r, int a, int l) {
 		if (r) name = path[path.size() - 1] == '/' ?
 			path + name : path + "/" + name;
 		string desc;
-		if (a) {
+		if (l) {
+			if (a && ((name.rfind("/") == string::npos && name[0] == '.')
+				|| (name.rfind("/") != string::npos && name.substr(name.rfind("/") + 1)[0] == '.'))) {
+				continue;
+			}
 			FS::read_inode(inode, dir[i].inode);
 			if (dir[i].type == FS::File_t::Dir) {
 				desc = Term::color(Term::fg::white) + "<DIR>";
@@ -355,7 +413,9 @@ void Shell_CLI::ls(string path, int r, int a, int l) {
 			}
 			if (dir[i].type == FS::File_t::File) {
 				desc = Term::color(Term::fg::white) 
-					+ to_string(inode->i_size) + " Bytes";
+					+ to_string(inode->i_size) + " Bytes"
+					+ Term::color(Term::fg::white)
+					+ acl_str(inode->i_acl);
 				name = Term::color(Term::fg::bright_white)
 					+ Term::color(Term::style::reset) + name;
 				
@@ -364,8 +424,8 @@ void Shell_CLI::ls(string path, int r, int a, int l) {
 			cout << Term::color(Term::style::reset);
 		}
 		else {
-			if ((name.rfind("/") == string::npos && name[0] == '.')
-				|| (name.rfind("/") != string::npos && name.substr(name.rfind("/") + 1)[0] == '.')) {
+			if (a && ((name.rfind("/") == string::npos && name[0] == '.')
+				|| (name.rfind("/") != string::npos && name.substr(name.rfind("/") + 1)[0] == '.'))) {
 				continue;
 			}
 			if (dir[i].type == FS::File_t::Dir) {
@@ -488,7 +548,11 @@ void Shell_CLI::mem() {
 	kernel->pg->stat();
 }
 void Shell_CLI::exec(string path) {
-	kernel->sch->exec(path, kernel->sch->fork(1));
+	if(path.size() > 2 && path.substr(path.size() - 2) == ".p")
+		kernel->sch->exec(path, kernel->sch->fork(1));
+	else {
+		cout << "Not a executable file." << endl;
+	}
 }
 void Shell_CLI::now() {
 	cout << kernel->get_clock() << endl;

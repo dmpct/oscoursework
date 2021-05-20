@@ -172,7 +172,8 @@ int main() {
 		info.close();
 	}
 	cout << "Initializing...";
-	Kernel* kernel = new Kernel(pralg, mmalg);
+	uint64_t uid = uname == "admin" ? 0 : hash<string>{}(uname);
+	Kernel* kernel = new Kernel(pralg, mmalg, uid);
 	Shell_CLI shell(kernel, term, uname);
 	cout << "Done." << endl;
 	cout << Term::clear_screen() << Term::move_cursor(0, 0);

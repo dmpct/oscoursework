@@ -15,6 +15,8 @@ Scheduler::Scheduler(function<void(int, void*)> idt,
 	cur_tp = 0;
 	doneprs = 0;
 	turnaround = 0;
+	cpu_piece = 0;
+	idle_piece = 0;
 }
 Scheduler::~Scheduler() {
 	for (auto v : prlist) {
@@ -79,6 +81,7 @@ bool Scheduler::kill(uint16_t pid) {
 			prlist[prlist[pid]->children]->parent = 1;
 		prlist[pid]->release();
 		prlist[pid]->state = PR::DEAD;
+		idt(INTN::INT::REQ_DEV_POP, &pid);
 		ready.remove_if([pid](int p) { return p == pid; });
 		waiting.remove_if([pid](int p) { return p == pid; });
 		high_pr.remove_if([pid](int p) { return p == pid; });
@@ -109,12 +112,18 @@ void Scheduler::wake(int pid) {
 	}
 }
 
+double Scheduler::throughput() {
+	return 60 * (doneprs / clock);
+}
+
 void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after a waiting?
 	clock = time;
+	cpu_piece = time;
 	if (algo == PR::Algorithm::FCFS) {
 		if (!ready.size()) {
 			if (running == 0) {
 				prlist[0]->cputime++;
+				idle_piece++;
 				return;
 			}
 			else return; // should not happen
@@ -134,6 +143,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 				else {
 					prlist[pid]->state = PR::RUNNING;
 					prlist[pid]->cputime++;
+					idle_piece++;
 					running = 0;
 					return;
 				}
@@ -247,6 +257,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 		}
 		if (running == 0) {
 			prlist[running]->cputime++;
+			idle_piece++;
 			return;
 		}
 		int res = -1;
@@ -346,6 +357,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			}
 			else {
 				prlist[running]->cputime++;
+				idle_piece++;
 				cur_tp--;
 				return;
 			}
@@ -436,6 +448,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 		}
 		if (running == 0) {
 			prlist[running]->cputime++;
+			idle_piece++;
 			return;
 		}
 
@@ -544,6 +557,7 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 
 		if (running == 0) {
 			prlist[running]->cputime++;
+			idle_piece++;
 			cur_tp--;
 			return;
 		}
@@ -621,6 +635,10 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 	else { // should not happen
 		Log::w("(process.cpp) schedule: unknown schedule mode.\n");
 	}
+}
+
+double Scheduler::cpu_rate() {
+	return 1 - (idle_piece / cpu_piece);
 }
 
 void Scheduler::set_pending(int pid) {

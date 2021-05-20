@@ -26,6 +26,23 @@ int Device::poll() {
 	return pid;
 }
 
+void Device::pop(int pid) {
+	auto v = find_if(waiting.begin(), waiting.end(),
+		[pid](pair<int, int> p) { return p.second == pid; });
+	if (v != waiting.end()) {
+		waiting.erase(v);
+	}
+}
+
+pair<string, vector<pair<int, int>>> Device::stat() {
+	vector<pair<int, int>> state;
+	for (auto v : waiting) {
+		state.push_back({ v.first, v.second });
+	}
+	auto res = make_pair(name, state);
+	return res;
+}
+
 
 Printer::Printer(string name, function<void(int, void*)> idt)
 	: Device(name, idt) {

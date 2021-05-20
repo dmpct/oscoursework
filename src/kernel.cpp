@@ -1,10 +1,10 @@
 #include "../include/kernel.h"
 
-Kernel::Kernel(PR::Algorithm pa, MM::Algorithm ma) {
+Kernel::Kernel(PR::Algorithm pa, MM::Algorithm ma, uint64_t uid) : uid(uid) {
 	function<void(int, void*)> idt = bind(&Kernel::int_handler, this, placeholders::_1, placeholders::_2);
 	pg = new PageMemoryModel(idt,
 		MM::PHYS_MEM_SIZE, MM::PAGE_SIZE);
-	fs = new Filesystem(idt);
+	fs = new Filesystem(uid);
 	sch = new Scheduler(idt,
 		pa, ma);
 	if(!fs->exist("/.swap")) fs->create_swapspace("", ".swap");
@@ -21,6 +21,38 @@ Kernel::Kernel(PR::Algorithm pa, MM::Algorithm ma) {
 	clock = 0;
 	exit_kernel = false;
 	mode = 1;
+}
+
+void Kernel::new_device(string name) {
+	function<void(int, void*)> idt = bind(&Kernel::int_handler, this, placeholders::_1, placeholders::_2);
+	Device* dev = new Device(name, idt);
+	devices.push_back(dev);
+}
+
+int Kernel::del_device(string name) {
+	auto v = find_if(devices.begin(), devices.end(),
+		[name](Device* d) { return d->name == name; });
+	if (v == devices.end()) {
+		return -1;
+	}
+	else {
+		if ((*v)->query()) {
+			return -2;
+		}
+		else {
+			devices.erase(v);
+			return 0;
+		}
+	}
+	return -3;
+}
+
+vector<pair<string, vector<pair<int, int>>>> Kernel::expose_devices() {
+	vector<pair<string, vector<pair<int, int>>>> res;
+	for (auto v : devices) {
+		res.push_back(v->stat());
+	}
+	return res;
 }
 
 void Kernel::run() {
@@ -210,6 +242,13 @@ void Kernel::int_handler(int int_type, void* args) { // interrupt callback
 	case INTN::INT::REQ_FILE_CLOSE: {
 		int fid = *static_cast<int*>(args);
 		fs->close(fid);
+		break;
+	}
+	case INTN::INT::REQ_DEV_POP: {
+		int pid = *static_cast<int*>(args);
+		for (auto d : devices) {
+			d->pop(pid);
+		}
 	}
 	}
 }

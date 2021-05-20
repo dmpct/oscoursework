@@ -20,6 +20,8 @@ namespace INTN {
 		RELEASE_PAGE,
 		REQ_FILE_OPEN,
 		REQ_FILE_CLOSE,
+		REQ_DEV_POP,
+		REQ_UID
 	};
 }
 

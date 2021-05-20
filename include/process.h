@@ -105,6 +105,8 @@ private:
 
 	int turnaround;
 	int doneprs;
+	int cpu_piece;
+	int idle_piece;
 	
 public:
 	Scheduler(function<void(int, void*)> idt,
@@ -122,6 +124,8 @@ public:
 	void schedule(PR::Timepiece time);
 	void read_table();
 	void print_mem();
+	double cpu_rate();
+	double throughput();
 	vector<vector<string>> expose();
 	vector<vector<string>> expose_mem();
 	void chalg(PR::Algorithm, MM::Algorithm);

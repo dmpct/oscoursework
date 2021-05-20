@@ -239,7 +239,7 @@ namespace FS {
 	}
 }
 
-Filesystem::Filesystem(function<void(int, void*)> idt) {
+Filesystem::Filesystem(uint64_t uid) : uid(uid) {
 	//lock_guard<mutex> guard(file_lock);
 	FS::init();
 	sb = new struct FS::Superblock;
@@ -356,7 +356,26 @@ int Filesystem::open(string path, int rw, int truncate) {
 	int index = walk(path, inode, d);
 	if (index == -1 || inode->i_mode != FS::File_t::File) {
 		Log::w("(filesystem.cpp) open: file not found.\n");
+		delete inode;
+		delete[] d;
 		return -1;
+	}
+	if (uid == inode->i_uid) {
+		if (!(inode->i_acl & FS::RD_OWNER)) {
+			Log::w("(filesystem.cpp) open: permission denied.\n");
+			delete inode; delete[] d;
+			return -1;
+		}
+	}
+	else if(uid) {
+		if (!(inode->i_acl & FS::RD_OTHER)) {
+			Log::w("(filesystem.cpp) open: permission denied.\n");
+			delete inode; delete[] d;
+			return -1;
+		}
+	}
+	else {
+		//admin
 	}
 	for (int i = 0; i < file_table.size(); i++) {
 		if (file_table[i]->inode == index) {
@@ -551,6 +570,13 @@ bool Filesystem::create(string path, string fname, FS::File_t type) {
 	new_inode->i_nlinks = 1;
 	new_inode->i_size = 0;
 	new_inode->i_blockaddr[0] = db;
+	new_inode->i_uid = uid;
+	if (fname.size() > 2 && fname.substr(fname.size() - 2, fname.size()) == ".p") {
+		new_inode->i_acl = FS::ALL_OWNER | FS::ALL_OTHER;
+	}
+	else {
+		new_inode->i_acl = FS::RW_OWNER | FS::RW_OTHER;
+	}
 	sb->nfreeblks--;
 	sb->nfreeinodes--;
 
@@ -625,7 +651,26 @@ bool Filesystem::fdelete(string path) {
 		return false;
 	}
 
+	if (uid == inode->i_uid) {
+		if (!(inode->i_acl & FS::WR_OWNER)) {
+			Log::w("(filesystem.cpp) fdelete: permission denied.\n");
+			delete inode; delete[] d;
+			return false;
+		}
+	}
+	else if (uid) {
+		if (!(inode->i_acl & FS::WR_OTHER)) {
+			Log::w("(filesystem.cpp) fdelete: permission denied.\n");
+			delete inode; delete[] d;
+			return false;
+		}
+	}
+	else {
+		//admin
+	}
+
 	if (inode->i_mode == FS::File_t::Dir) {
+		
 		if (inode->i_size > sizeof(struct FS::Dir) * 2) {
 			Log::w("(filesystem.cpp) fdelete: dir not empty.\n");
 			delete inode;
@@ -717,6 +762,23 @@ bool Filesystem::write(string path, char* buf, uint32_t offset, size_t size) {
 		delete inode; delete[] d;
 		return false;
 	}
+	if (uid == inode->i_uid) {
+		if (!(inode->i_acl & FS::WR_OWNER)) {
+			Log::w("(filesystem.cpp) write: permission denied.\n");
+			delete inode; delete[] d;
+			return false;
+		}
+	}
+	else if (uid) {
+		if (!(inode->i_acl & FS::WR_OTHER)) {
+			Log::w("(filesystem.cpp) write: permission denied.\n");
+			delete inode; delete[] d;
+			return false;
+		}
+	}
+	else {
+		//admin
+	}
 	if (offset > inode->i_size) {
 		Log::w("(filesystem.cpp) write: invalid offset.\n");
 		delete inode; delete[] d;
@@ -761,6 +823,42 @@ bool Filesystem::write(string path, char* buf, uint32_t offset, size_t size) {
 	delete inode;
 	delete[] d;
 	return true;
+}
+
+void Filesystem::chmod(string path, int mode) {
+	struct FS::Inode* inode = new struct FS::Inode;
+	struct FS::Dir* d = new struct FS::Dir[8];
+	int index = walk(path, inode, d);
+	if (index == -1) {
+		Log::w("(filesystem.cpp) chmod: file does not exist.\n");
+		delete inode; delete[] d;
+		return;
+	}
+	if (inode->i_mode != FS::File_t::File) {
+		Log::w("(filesystem.cpp) chmod: chmod on directory.\n");
+		delete inode; delete[] d;
+		return;
+	}
+	if (uid == inode->i_uid) {
+		if (!(inode->i_acl & FS::WR_OWNER)) {
+			Log::w("(filesystem.cpp) chmod: permission denied.\n");
+			delete inode; delete[] d;
+			return;
+		}
+	}
+	else if (uid) {
+		if (!(inode->i_acl & FS::WR_OTHER)) {
+			Log::w("(filesystem.cpp) chmod: permission denied.\n");
+			delete inode; delete[] d;
+			return;
+		}
+	}
+	else {
+		//admin
+	}
+	inode->i_acl = mode;
+	FS::write_inode(inode, index);
+	delete inode; delete[] d;
 }
 
 int Filesystem::write_swapspace(string path, char* buf, int blk) {
@@ -817,6 +915,24 @@ int Filesystem::read(string path, char* buf, uint32_t offset, int size) {
 		delete inode; delete[] d;
 		return -1;
 	}
+	if (uid == inode->i_uid) {
+		if (!(inode->i_acl & FS::RD_OWNER)) {
+			Log::w("(filesystem.cpp) read: permission denied.\n");
+			delete inode; delete[] d;
+			return -1;
+		}
+	}
+	else if (uid) {
+		if (!(inode->i_acl & FS::RD_OTHER)) {
+			Log::w("(filesystem.cpp) read: permission denied.\n");
+			delete inode; delete[] d;
+			return -1;
+		}
+	}
+	else {
+		//admin
+	}
+	
 	if (size == -1) {
 		size = inode->i_size;
 	}

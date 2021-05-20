@@ -11,6 +11,10 @@ static const char* plabels[MAX_LEN];
 static const char* tlabels[MAX_CLOCK];
 static char buf_fstree[FS::BLK_SIZE * FS::MAX_N_BLKS];
 static char cd_buf[FS::MAX_NAME_LEN];
+static char mount_buf[120];
+static char acl_buf[3];
+
+static vector<pair<string, vector<pair<int, int>>>> device_stat;
 
 static int pname_filter(ImGuiInputTextCallbackData* data) {
     if (data->EventChar < 255 && data->EventChar != '/')
@@ -28,7 +32,7 @@ struct dir {
 
 };
 
-static struct TreeItem* tree_root = new TreeItem("/", 0, 1, nullptr);
+static struct TreeItem* tree_root = new TreeItem("/", 0, 1, 0, nullptr);
 static struct TreeItem* now_tree_node;
 
 void ls_root(Kernel* kernel, string path) {
@@ -41,7 +45,7 @@ void ls_root(Kernel* kernel, string path) {
         if (dir[i].type == FS::File_t::Dir) {
             if (name == ".."
                 || name == ".") continue;
-            now_tree_node->add(name, 0, 1);
+            now_tree_node->add(name, 0, 1, 0);
             now_tree_node = now_tree_node->lastChild();
             string npath = path[path.size() - 1] == '/' ?
                 path + name : path + "/" + name;
@@ -50,7 +54,7 @@ void ls_root(Kernel* kernel, string path) {
         }
         if (dir[i].type == FS::File_t::File) {
             FS::read_inode(inode, dir[i].inode);
-            now_tree_node->add(name, inode->i_size, 0);
+            now_tree_node->add(name, inode->i_size, 0, inode->i_acl);
         }
     }
     delete inode;
@@ -252,6 +256,8 @@ void main_window(Kernel* kernel) {
     mem_pos.x = 4.0; mem_pos.y = 358.0;
 
     static double avgturnaround = 0;
+    static double cpurate = 0;
+    static double systp = 0;
 
     while (!glfwWindowShouldClose(window)) {
         // Poll and handle events (inputs, window resize, etc.)
@@ -282,6 +288,8 @@ void main_window(Kernel* kernel) {
             mem_map = kernel->mem_map();
             swap_blks = kernel->swap_map();
             avgturnaround = kernel->statistic();
+            cpurate = kernel->sch->cpu_rate();
+            systp = kernel->sch->throughput();
             alg = kernel->alg();
             if (palg >= 0 && malg >= 0 &&
                 (strcmp(pas[palg], alg.first.c_str())
@@ -314,9 +322,10 @@ void main_window(Kernel* kernel) {
             }
             pwd = kernel->get_pwd();
             delete tree_root;
-            tree_root = new TreeItem("/", 0, 1, nullptr);
+            tree_root = new TreeItem("/", 0, 1, 0, nullptr);
             now_tree_node = tree_root;
             ls_root(kernel, "/");
+            device_stat = kernel->expose_devices();
         }
 
         for (int i = 0; i < map_len; i++) {
@@ -348,6 +357,8 @@ void main_window(Kernel* kernel) {
                     ImGui::Begin("Toolbox", 0, status_flags);
                     if (ImGui::CollapsingHeader("System Info", ImGuiTreeNodeFlags_None)) {
                         ImGui::Text("System Average Turnaround Time: %.2f", avgturnaround);
+                        ImGui::Text("System CPU Usage: %.2f%%", cpurate);
+                        ImGui::Text("System Throughput: %.2f/60Ticks", systp);
                         ImGui::Separator();
                         ImGui::Text("Process Scheduler: %s", alg.first.c_str());
                         ImGui::SameLine();
@@ -371,7 +382,7 @@ void main_window(Kernel* kernel) {
                                 ImGui::Separator();
                                 ImGui::InputTextWithHint("##pt1", "Process Path(Blank=pwd)",
                                     ppath, FS::MAX_NAME_LEN);
-                                ImGui::InputTextWithHint("##pt2", "Process Name",
+                                ImGui::InputTextWithHint("##pt2", "Process Name(End with .p)",
                                     pname, FS::MAX_NAME_LEN,
                                     ImGuiInputTextFlags_CallbackCharFilter,
                                     pname_filter);
@@ -380,22 +391,28 @@ void main_window(Kernel* kernel) {
                                     ImGuiInputTextFlags_AllowTabInput);
                                 if (ImGui::Button("Submit")) {
                                     string path = string(ppath);
-                                    if (path.size() && path[path.size() - 1] == '/')
-                                        path = path.substr(0, path.size() - 1);
-                                    if (!path.size()) path = pwd;
                                     string name = string(pname);
-                                    bool ok = kernel->fs->create(path + "/", name, FS::File_t::File);
-                                    if (ok) {
-                                        kernel->fs->write(path + "/" + name, code, 0, strlen(code));
-                                        kernel->sch->exec(path + "/" + name, kernel->sch->fork(1));
+                                    if (name.size() > 2 && name.substr(name.size() - 2) == ".p") {
+                                        if (path.size() && path[path.size() - 1] == '/')
+                                            path = path.substr(0, path.size() - 1);
+                                        if (!path.size()) path = pwd;
+                                        bool ok = kernel->fs->create(path + "/", name, FS::File_t::File);
+                                        if (ok) {
+                                            kernel->fs->write(path + "/" + name, code, 0, strlen(code));
+                                            kernel->sch->exec(path + "/" + name, kernel->sch->fork(1));
+                                        }
+                                        memset(pname, 0, FS::MAX_NAME_LEN);
+                                        memset(ppath, 0, FS::MAX_NAME_LEN);
+                                        memset(code, 0, FS::BLK_SIZE);
+                                        delete tree_root;
+                                        tree_root = new TreeItem("/", 0, 1, 0, nullptr);
+                                        now_tree_node = tree_root;
+                                        ls_root(kernel, "/");
                                     }
-                                    memset(pname, 0, FS::MAX_NAME_LEN);
-                                    memset(ppath, 0, FS::MAX_NAME_LEN);
-                                    memset(code, 0, FS::BLK_SIZE);
-                                    delete tree_root;
-                                    tree_root = new TreeItem("/", 0, 1, nullptr);
-                                    now_tree_node = tree_root;
-                                    ls_root(kernel, "/");
+                                    else {
+                                        memset(pname, 0, 120);
+                                        strcpy(pname, "Invalid name.");
+                                    }
                                 }
                                 ImGui::EndTabItem();
                             }
@@ -427,7 +444,7 @@ void main_window(Kernel* kernel) {
                                     memset(fpath, 0, FS::MAX_NAME_LEN);
                                     memset(fcont, 0, FS::BLK_SIZE);
                                     delete tree_root;
-                                    tree_root = new TreeItem("/", 0, 1, nullptr);
+                                    tree_root = new TreeItem("/", 0, 1, 0, nullptr);
                                     now_tree_node = tree_root;
                                     ls_root(kernel, "/");
                                 }
@@ -455,7 +472,7 @@ void main_window(Kernel* kernel) {
                                     memset(dname, 0, FS::MAX_NAME_LEN);
                                     memset(dpath, 0, FS::MAX_NAME_LEN);
                                     delete tree_root;
-                                    tree_root = new TreeItem("/", 0, 1, nullptr);
+                                    tree_root = new TreeItem("/", 0, 1, 0, nullptr);
                                     now_tree_node = tree_root;
                                     ls_root(kernel, "/");
                                 }
@@ -484,7 +501,7 @@ void main_window(Kernel* kernel) {
                                     memset(sname, 0, FS::MAX_NAME_LEN);
                                     memset(spath, 0, FS::MAX_NAME_LEN);
                                     delete tree_root;
-                                    tree_root = new TreeItem("/", 0, 1, nullptr);
+                                    tree_root = new TreeItem("/", 0, 1, 0, nullptr);
                                     now_tree_node = tree_root;
                                     ls_root(kernel, "/");
                                 }
@@ -518,8 +535,9 @@ void main_window(Kernel* kernel) {
                             while (now_tree_node)
                             {
                                 if (now_tree_node->type == 0) {
-                                    ImGui::BulletText("%s Size=%d Bytes",
-                                        now_tree_node->name.c_str(), now_tree_node->size);
+                                    ImGui::BulletText("%s | Size=%d Bytes | ACL=%s",
+                                        now_tree_node->name.c_str(), now_tree_node->size,
+                                        acl_str(now_tree_node->acl).c_str());
                                     if (ImGui::BeginPopupContextItem(dummy_labels[dummy_index++]))
                                     {
                                         if (ImGui::Selectable("Open")) {
@@ -531,9 +549,22 @@ void main_window(Kernel* kernel) {
                                         if (ImGui::Selectable("Delete")) {
                                             kernel->fs->fdelete(now_tree_node->cat());
                                         }
-                                        if (ImGui::Selectable("Execute")) {
-                                            kernel->sch->exec(now_tree_node->cat(), 
-                                                kernel->sch->fork(1));
+                                        if (now_tree_node->name.size() > 2 
+                                            && now_tree_node->name.substr(
+                                                now_tree_node->name.size()-2) == ".p") {
+                                            if (ImGui::Selectable("Execute")) {
+                                                kernel->sch->exec(now_tree_node->cat(),
+                                                    kernel->sch->fork(1));
+                                            }
+                                        }
+                                        
+                                        ImGui::Separator();
+                                        ImGui::InputTextWithHint("##acl", "Integer 0~63 only", acl_buf, 3);
+                                        ImGui::SameLine();
+                                        if (ImGui::Selectable("Chmod")) {
+                                            kernel->fs->chmod(now_tree_node->cat(),
+                                                stoi(string(acl_buf)));
+                                            memset(acl_buf, 0, 3);
                                         }
                                         ImGui::EndPopup();
                                     }
@@ -572,6 +603,35 @@ void main_window(Kernel* kernel) {
                                 stk.pop();
                                 if (!now_tree_node->next_sibling) ImGui::TreePop();
                                 now_tree_node = now_tree_node->next_sibling;
+                            }
+                        }
+                    }
+                    if (ImGui::CollapsingHeader("Devices", ImGuiTreeNodeFlags_None)) {
+                        ImGui::InputTextWithHint("##Mount", "Device Name", mount_buf, 120);
+                        ImGui::SameLine();
+                        if (ImGui::Button("Mount")) {
+                            kernel->new_device(string(mount_buf));
+                            memset(mount_buf, 0, 120);
+                        }
+                        for (auto v : device_stat) {
+                            if (ImGui::TreeNode(v.first.c_str())) {
+                                if (v.second.size()) {
+                                    ImGui::Text("Occupied.");
+                                    ImGui::Separator();
+                                    for (auto u : v.second) {
+                                        ImGui::Text("(pid=%d, timeleft=%d)", u.second, u.first);
+                                    }
+                                }
+                                else {
+                                    ImGui::Text("Free.");
+                                }
+                                ImGui::TreePop();
+                            }
+                            if (ImGui::BeginPopupContextItem("device rightclick"))
+                            {
+                                if (ImGui::Selectable("Unmount")) {
+                                    kernel->del_device(v.first);
+                                }
                             }
                         }
                     }

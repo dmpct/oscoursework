@@ -24,12 +24,13 @@ private:
 				return !isspace(ch);
 			}).base(), s.end());
 	}
+	uint64_t uid;
 
 public:
 	PageMemoryModel* pg;
 	Filesystem* fs;
 	Scheduler* sch;
-	Kernel(PR::Algorithm pa, MM::Algorithm ma);
+	Kernel(PR::Algorithm pa, MM::Algorithm ma, uint64_t uid);
 	~Kernel();
 	void int_handler(int int_type, void* args);
 	int load_prog(string path, VirtMemoryModel* mm, int* et, int* pri);
@@ -47,4 +48,7 @@ public:
 	vector<int> mem_map();
 	vector<int> swap_map();
 	double statistic();
+	void new_device(string name);
+	int del_device(string name);
+	vector<pair<string, vector<pair<int, int>>>> expose_devices();
 };

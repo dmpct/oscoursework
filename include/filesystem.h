@@ -50,8 +50,7 @@ namespace FS {
 	};
 
 	struct Inode { // 128B
-		uint16_t i_mode; // File_t
-		uint16_t i_uid; // owner
+		uint32_t i_mode; // File_t
 		uint64_t i_size; // size in B
 		uint32_t i_nlinks; // n hard links
 		uint32_t i_nblocks; // n data blocks
@@ -60,12 +59,12 @@ namespace FS {
 		uint32_t i_mtime; // last modify time (modify data)
 		uint32_t i_blockaddr[MAX_N_BLKS]; // pointer to data blocks
 		uint32_t i_acl; // permissions, rwxrwx
+		uint64_t i_uid; // owner
 		uint32_t fill1; // dummy
 		uint32_t fill2; // dummy
 		uint32_t fill3; // dummy
 		uint32_t fill4; // dummy
 		uint32_t fill5; // dummy
-		uint32_t fill6; // dummy
 	};
 
 	struct Dir { // 128B
@@ -103,6 +102,7 @@ namespace FS {
 class Filesystem {
 private:
 	vector<struct FS::File*> file_table;
+	uint64_t uid;
 	struct FS::Superblock* sb;
 	char* imap;
 	char* dmap;
@@ -112,7 +112,7 @@ private:
 	void set_pwd_str(string path);
 	mutex file_lock;
 public:
-	Filesystem(function<void(int, void*)> idt);
+	Filesystem(uint64_t uid);
 	~Filesystem();
 	int walk(string path, struct FS::Inode* inode, struct FS::Dir* dir);
 	int open(string path, int rw, int truncate);
@@ -128,4 +128,5 @@ public:
 	int write_swapspace(string path, char* buf, int blk);
 	int read_swapspace(string path, char* buf, int blk);
 	void reset_swapspace(string path);
+	void chmod(string path, int mode);
 };
