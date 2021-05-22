@@ -239,7 +239,7 @@ namespace FS {
 	}
 }
 
-Filesystem::Filesystem(uint64_t uid) : uid(uid) {
+Filesystem::Filesystem(function<void(int, void*)> idt, uint64_t uid) : idt(idt), uid(uid) {
 	//lock_guard<mutex> guard(file_lock);
 	FS::init();
 	sb = new struct FS::Superblock;
@@ -254,6 +254,8 @@ Filesystem::Filesystem(uint64_t uid) : uid(uid) {
 	FS::read_inode(pwd_inode, 0);
 	int blk = pwd_inode->i_blockaddr[0];
 	FS::read_block(reinterpret_cast<char*>(c_dir), 3 + FS::N_INODEBLKS + blk, 0, FS::BLK_SIZE);
+	file_table.resize(0);
+	filequeue.resize(0);
 }
 
 Filesystem::~Filesystem() {
@@ -349,8 +351,54 @@ int Filesystem::walk(string path, struct FS::Inode* inode, struct FS::Dir* dir) 
 	return index;
 }
 
+int Filesystem::fread(int fid, int pid, int time) {
+	int state = 1;
+	if (file_table[fid]->rw != 2) { // free
+		file_table[fid]->rw = 1;
+		state = 0;
+	}
+	filequeue[fid].first.push_back(pid);
+	return state;
+}
+
+int Filesystem::fwrite(int fid, int size, int pid, int time) {
+	int state = 1;
+	if (file_table[fid]->rw == 0) { // free
+		file_table[fid]->rw = 2;
+		//char* dummy = new char[size];
+		//write(file_table[fid]->fname, dummy, file_table[fid]->offset, size);
+		state = 0;
+	}
+	filequeue[fid].second.push_back(pid);
+	return state;
+}
+
+void Filesystem::fpop(int pid, int fid, int rw, int size) {
+	if (rw == 1) {
+		filequeue[fid].first.remove(pid);
+		if (!filequeue[fid].first.size()) {
+			file_table[fid]->rw = 0;
+			if (filequeue[fid].second.size()) {
+				idt(INTN::INT::FILE_WAKE, &filequeue[fid].second.front());
+			}
+		}
+	}
+	else if (rw == 2) {
+		filequeue[fid].second.remove(pid);
+		/*char* dummy = new char[size];
+		write(file_table[fid]->fname, dummy, file_table[fid]->offset, size);
+		file_table[fid]->offset += size;*/
+		if (!filequeue[fid].second.size()) {
+			file_table[fid]->rw = 0;
+			for (auto v : filequeue[fid].first) {
+				idt(INTN::INT::FILE_WAKE, &v);
+			}
+		}
+	}
+}
+
 int Filesystem::open(string path, int rw, int truncate) {
-	//lock_guard<mutex> guard(file_lock);
+	
 	struct FS::Inode* inode = new struct FS::Inode;
 	struct FS::Dir* d = new struct FS::Dir[8];
 	int index = walk(path, inode, d);
@@ -379,6 +427,7 @@ int Filesystem::open(string path, int rw, int truncate) {
 	}
 	for (int i = 0; i < file_table.size(); i++) {
 		if (file_table[i]->inode == index) {
+			file_table[i]->counter++;
 			return i;
 		}
 	}
@@ -389,23 +438,23 @@ int Filesystem::open(string path, int rw, int truncate) {
 	delete inode;
 	delete[] d;
 	struct FS::File* f = new struct FS::File;
-	f->inode = index;
+	f->fname = path;
 	f->counter = 1;
 	f->offset = 0;
-	f->r = 1;
-	f->w = rw;
+	f->rw = 0;
+	f->inode = index;
 	file_table.push_back(f);
+	filequeue.resize(max(filequeue.size(), file_table.size()));
 	return file_table.size() - 1;
 }
 
 void Filesystem::close(int fd) {
-	//lock_guard<mutex> guard(file_lock);
 	file_table[fd]->counter--;
-	if (!file_table[fd]->counter) {
+	/*if (!file_table[fd]->counter < 0) {
 		auto f = file_table.begin();
 		for (int i = 0; i < fd; i++, f++);
 		file_table.erase(f);
-	}
+	}*/
 }
 
 void Filesystem::reset_swapspace(string path) {

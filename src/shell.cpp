@@ -191,7 +191,6 @@ void Shell_CLI::show() {
 				exit = true;
 			}
 			else if (cmd == "ps") {
-				this->now();
 				this->ps();
 			}
 			else if (cmd == "pause") {

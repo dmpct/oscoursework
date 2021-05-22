@@ -53,8 +53,14 @@ namespace PR {
 class Process {
 private:
 	mt19937 rd_s;
+	char names[240];
+	string seek_names(int id);
+	char last_ins;
+	string last_file;
+	int last_size;
 public:
 	VirtMemoryModel* mem;
+	string pwd;
 	string name;
 	uint16_t state;
 	uint16_t pid;
@@ -62,7 +68,7 @@ public:
 	uint16_t sibling;
 	uint16_t children;
 	uint16_t priority;
-	vector<int> open_files; // ?
+	vector<pair<string, int>> open_files;
 	PR::Timepiece cputime;
 	PR::Timepiece servtime;
 	PR::Timepiece iotime;
@@ -76,12 +82,12 @@ public:
 
 	Process(string name, uint16_t state, uint16_t pid, 
 		uint16_t parent, uint16_t priority, PR::Timepiece time,
-		function<void(int, void*)> idt, MM::Algorithm algo);
+		function<void(int, void*)> idt, MM::Algorithm algo, string pwd);
 	Process(Process* father, uint16_t pid, PR::Timepiece time);
 	~Process();
 
 	void release();
-	int run(PR::Timepiece tp, char* info);
+	int run(PR::Timepiece tp, void* info);
 	int generate_random_pg();
 };
 

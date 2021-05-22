@@ -172,6 +172,7 @@ public:
 	int alloc_frame();
 	bool access_page(int pg, char* buf);
 	bool access(MM::virt_addr addr, char* buf);
+	bool view(MM::virt_addr from, MM::virt_addr to, char* buf);
 	int get_nmapped() { return nmapped; }
 	int get_nblocks() { return nblocks; }
 	void set_blocks(int blks);

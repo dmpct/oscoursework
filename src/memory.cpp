@@ -64,6 +64,11 @@ int PhysMemoryModel::swap_in(MM::phys_addr from, function<void(int, void*)> idt,
 bool PageMemoryModel::pg_swap_out(int pg) {
 	//cout << "swap out: " << pg << endl;
 	if (pgtable[pg]->locked) return false;
+	/*if (freepgs.size() >= (pgtable.size() / 4)) {
+		pgtable[pg]->refed = 1;
+		pgtable[pg]->counter = 0;
+		return true;
+	}*/
 	int fs = -1;
 	for (int i = 0; i < swapbitmap.size(); i++) {
 		//cout << "in s " << i << endl;
@@ -89,6 +94,10 @@ bool PageMemoryModel::pg_swap_out(int pg) {
 }
 int PageMemoryModel::pg_swap_in(int pg) {
 	//cout << "swap in: " << pg << endl;
+	if (pgtable[pg]->refed && pgtable[pg]->counter == 0) {
+		pgtable[pg]->counter++;
+		return pg;
+	}
 	auto v = swaptable.begin();
 	int blk = -1;
 	for (; v != swaptable.end(); v++) {
@@ -137,10 +146,14 @@ PageMemoryModel::~PageMemoryModel() {
 }
 
 void PageMemoryModel::release_swap(int pg) {
+	if (pgtable[pg]->refed && pgtable[pg]->counter == 0) {
+		free_page(pg);
+	}
 	auto v = swaptable.begin();
 	for (; v != swaptable.end(); v++) {
 		if ((*v)->page == pg) {
 			swapbitmap[(*v)->blk] = 0; break;
+			delete (*v);
 		}
 	}
 	swaptable.erase(v);
@@ -149,7 +162,21 @@ void PageMemoryModel::release_swap(int pg) {
 int PageMemoryModel::alloc_page() {
 	lock_guard<mutex> guard(pg_lock);
 	if (freepgs.empty()) {
-		// swap
+		int spg = -1;
+		for (int i = 0; i < pgtable.size(); i++) {
+			auto pg = pgtable[i];
+			if (!pg->locked && pg->refed && !pg->counter) {
+				spg = i;
+				break;
+			}
+		}
+		if (spg != -1) {
+			pg_swap_out(spg);
+		}
+		else {
+			//process swapout
+			return -1;
+		}
 	}
 	int pg = freepgs.front();
 	freepgs.pop_front();
@@ -165,7 +192,7 @@ int PageMemoryModel::free_page(int pg) {
 	pgtable[pg]->refed = 0;
 	pgtable[pg]->counter = 0;
 	if (pgtable[pg]->dirty) {
-		// writeback, call kernel ????
+		// writeback????
 	}
 	freepgs.push_back(pg);
 	return 0;
@@ -280,7 +307,7 @@ bool VirtMemoryModel::access_page(int pg, char* buf) {
 		pgtable[pg]->t_ref = clk;
 		return true;
 	}
-	else { // not in frame, not in memory
+	else { // not in frame
 		struct args {
 			int pg;
 			char* buf;
@@ -311,7 +338,28 @@ bool VirtMemoryModel::access(MM::virt_addr addr, char* buf) {
 	if (nfault) {
 		memcpy(buf, vpbuf + offset, 1);
 	}
+	delete[] vpbuf;
 	if(pg > 0) acc_cnt++;
+	return nfault;
+}
+
+bool VirtMemoryModel::view(MM::virt_addr from, MM::virt_addr to, char* buf) {
+	if (max(from, to) > MM::VIRT_MEM_SIZE) {
+		// segmentation fault
+		return false;
+	}
+	auto pgfrom = from / MM::PAGE_SIZE;
+	auto pgto = to / MM::PAGE_SIZE;
+	if (pgfrom != pgto) {
+		return false;
+	}
+	auto offset = from % MM::PAGE_SIZE;
+	char* vpbuf = new char[MM::PAGE_SIZE];
+	bool nfault = access_page(pgfrom, vpbuf);
+	if (nfault) {
+		memcpy(buf, vpbuf + offset, to - from);
+	}
+	delete[] vpbuf;
 	return nfault;
 }
 
@@ -418,7 +466,7 @@ bool VirtMemoryModel::write_page(int pg, char* buf, MM::log_addr addr, int size)
 		idt(INTN::INT::REQ_MEM_WRITE, &args);
 		return true;
 	}
-	else { // in swap
+	else { // not in frame, could be in memory or in swap
 		struct args {
 			int pg;
 			char* buf;

@@ -4,7 +4,7 @@ Kernel::Kernel(PR::Algorithm pa, MM::Algorithm ma, uint64_t uid) : uid(uid) {
 	function<void(int, void*)> idt = bind(&Kernel::int_handler, this, placeholders::_1, placeholders::_2);
 	pg = new PageMemoryModel(idt,
 		MM::PHYS_MEM_SIZE, MM::PAGE_SIZE);
-	fs = new Filesystem(uid);
+	fs = new Filesystem(idt, uid);
 	sch = new Scheduler(idt,
 		pa, ma);
 	if(!fs->exist("/.swap")) fs->create_swapspace("", ".swap");
@@ -51,6 +51,17 @@ vector<pair<string, vector<pair<int, int>>>> Kernel::expose_devices() {
 	vector<pair<string, vector<pair<int, int>>>> res;
 	for (auto v : devices) {
 		res.push_back(v->stat());
+	}
+	return res;
+}
+
+vector<pair<string, pair<list<int>, list<int>>>> Kernel::expose_sft() {
+	vector<pair<string, pair<list<int>, list<int>>>> res;
+	pair<string, pair<list<int>, list<int>>> pp;
+	vector<pair<int, string>> ff = fs->expose_sft();
+	vector<pair<list<int>, list<int>>> q = fs->expose_sft_queue();
+	for (auto v : ff) {
+		res.push_back({ v.second, q[v.first] });
 	}
 	return res;
 }
@@ -119,8 +130,10 @@ void Kernel::int_handler(int int_type, void* args) { // interrupt callback
 			int et;
 			int pri;
 			int state;
+			string pwd;
 		}* ss = static_cast<struct ss*>(args);
 		ss->state = load_prog(ss->path, ss->mm, &ss->et, &ss->pri);
+		ss->pwd = get_pwd();
 		break;
 	}
 	case INTN::INT::REQ_MEM_ACC: {
@@ -233,10 +246,9 @@ void Kernel::int_handler(int int_type, void* args) { // interrupt callback
 		struct ss {
 			int pid;
 			string fname;
-			int rw;
 			int fid;
 		} *ss = static_cast<struct ss*>(args);
-		ss->fid = fs->open(ss->fname, ss->rw, 0);
+		ss->fid = fs->open(ss->fname, 0, 1);
 		break;
 	}
 	case INTN::INT::REQ_FILE_CLOSE: {
@@ -244,11 +256,47 @@ void Kernel::int_handler(int int_type, void* args) { // interrupt callback
 		fs->close(fid);
 		break;
 	}
+	case INTN::INT::REQ_FILE_READ: {
+		struct ss {
+			int pid;
+			int fid;
+			int time;
+			int state;
+		} *ss = static_cast<struct ss*>(args);
+		ss->state = fs->fread(ss->fid, ss->pid, ss->time);
+		break;
+	}
+	case INTN::INT::REQ_FILE_WRITE: {
+		struct ss {
+			int pid;
+			int fid;
+			int time;
+			int bytes;
+			int state;
+		} *ss = static_cast<struct ss*>(args);
+		ss->state = fs->fwrite(ss->fid, ss->bytes, ss->pid, ss->time);
+		break;
+	}
 	case INTN::INT::REQ_DEV_POP: {
 		int pid = *static_cast<int*>(args);
 		for (auto d : devices) {
 			d->pop(pid);
 		}
+		break;
+	}
+	case INTN::INT::FILE_DONE: {
+		struct ss {
+			int pid;
+			int fid;
+			int rw;
+			int size;
+		} *ss = static_cast<struct ss*>(args);
+		fs->fpop(ss->pid, ss->fid, ss->rw, ss->size);
+		break;
+	}
+	case INTN::INT::FILE_WAKE: {
+		int pid = *static_cast<int*>(args);
+		sch->wake(pid);
 	}
 	}
 }
@@ -257,7 +305,12 @@ int Kernel::load_prog(string path, VirtMemoryModel* mm, int* et, int* pri) {
 	*et = 0;
 	*pri = -1;
 	char* buf = new char[15 * FS::BLK_SIZE];
-	char* p = buf;
+	char* buf_r = new char[MM::PAGE_SIZE];
+	char* buf_code = buf_r + 240;
+	char* p = buf_code;
+	char* sp = buf_r;
+	int si = 0;
+	*sp++ = static_cast<char>(240);
 	fs->read(path, buf, 0, -1);
 	string code(buf);
 	trim(code);
@@ -318,13 +371,12 @@ int Kernel::load_prog(string path, VirtMemoryModel* mm, int* et, int* pri) {
 				return 0;
 			}
 			string f = args.substr(0, pos);
+			strcpy(sp, f.c_str());
+			sp += (f.size() + 1);
 			int arg = stoi(args.substr(pos + 1));
 			*et += arg;
-			if (f.size() != 1) {
-				Log::w("(kernel.cpp) load_prog: only 1 byte filenames are allowed now.\n");
-			}
 			*p++ = 'r';
-			*p++ = f[0];
+			*p++ = static_cast<char>(si++);
 			*p++ = static_cast<char>(arg);
 		}
 		else if (cmd == "write") {
@@ -334,21 +386,38 @@ int Kernel::load_prog(string path, VirtMemoryModel* mm, int* et, int* pri) {
 				return 0;
 			}
 			string f = args.substr(0, pos);
-			int arg = stoi(args.substr(pos + 1));
-			*et += arg;
-			if (f.size() != 1) {
-				Log::w("(kernel.cpp) load_prog: only single-byte filenames are allowed now.\n");
+			strcpy(sp, f.c_str());
+			sp += (f.size() + 1);
+			string as = args.substr(pos + 1);
+			pos = args.find(" ");
+			if (pos == string::npos) {
+				delete[] buf;
+				return 0;
 			}
+			int arg1 = stoi(as.substr(0, pos));
+			int arg2 = stoi(as.substr(pos + 1));
+			*et += arg1;
 			*p++ = 'w';
-			*p++ = f[0];
-			*p++ = static_cast<char>(arg);
+			*p++ = static_cast<char>(si++);
+			*p++ = static_cast<char>(arg1);
+			*p++ = static_cast<char>(arg2);
 		}
 		else {
 			delete[] buf;
 			return 0;
 		}
 	}
-	mm->load(buf, static_cast<int>(p - buf));
+	mm->load(buf_r, static_cast<int>(p - buf_r));
+	/*auto pp = buf_r;
+	cout << "Compiled:" << endl;
+	while (pp != p) {
+		if (32 <= *pp && *pp <= 126)
+			cout << *pp;
+		else cout << '_';
+		pp++;
+	}
+	cout << endl;*/
+	delete[] buf_r;
 	delete[] buf;
 	return 1;
 }

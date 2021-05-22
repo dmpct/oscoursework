@@ -7,12 +7,13 @@ constexpr int MAX_LEN = 256;
 constexpr int MAX_CLOCK = 60 * 60 * 24;
 
 static const char* xlabels[MAX_LEN];
-static const char* plabels[MAX_LEN];
-static const char* tlabels[MAX_CLOCK];
+static const char* plabels[MAX_LEN] = {"idle"};
 static char buf_fstree[FS::BLK_SIZE * FS::MAX_N_BLKS];
 static char cd_buf[FS::MAX_NAME_LEN];
 static char mount_buf[120];
 static char acl_buf[3];
+
+static vector<pair<string, pair<list<int>, list<int>>>> sft_info;
 
 static vector<pair<string, vector<pair<int, int>>>> device_stat;
 
@@ -176,7 +177,7 @@ void main_window(Kernel* kernel) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 #endif
-    GLFWwindow* window = glfwCreateWindow(1200, 800, "System Status", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "System Status", NULL, NULL);
     if (window == NULL)
         return;
     glfwMakeContextCurrent(window);
@@ -275,9 +276,6 @@ void main_window(Kernel* kernel) {
         }
         if (kcl > kernel_clock) {
             kernel_clock = kcl;
-            char* tick = new char[MAX_LEN];
-            strcpy(tick, to_string(kernel_clock).c_str());
-            tlabels[kernel_clock - x_clock] = tick;
             process_states = kernel->expose_pr();
             make_stamp(process_states);
             int p = 0;
@@ -326,6 +324,7 @@ void main_window(Kernel* kernel) {
             now_tree_node = tree_root;
             ls_root(kernel, "/");
             device_stat = kernel->expose_devices();
+            sft_info = kernel->expose_sft();
         }
 
         for (int i = 0; i < map_len; i++) {
@@ -355,7 +354,7 @@ void main_window(Kernel* kernel) {
             if (kernel_clock >= 0) {
                 {
                     ImGui::Begin("Toolbox", 0, status_flags);
-                    if (ImGui::CollapsingHeader("System Info", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::CollapsingHeader("System Info")) {
                         ImGui::Text("System Average Turnaround Time: %.2f", avgturnaround);
                         ImGui::Text("System CPU Usage: %.2f%%", cpurate);
                         ImGui::Text("System Throughput: %.2f/60Ticks", systp);
@@ -368,8 +367,40 @@ void main_window(Kernel* kernel) {
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(100.0f);
                         ImGui::Combo("##ma", &malg, mas, 2);
+                        ImGui::Separator();
+                        ImGui::Text("System Filetable:");
+                        if (!sft_info.size()) {
+                            ImGui::Indent();
+                            ImGui::Text("Empty.");
+                            ImGui::Unindent();
+                        }
+                        for (auto v : sft_info) {
+                            ImGui::Bullet();
+                            ImGui::SameLine();
+                            ImGui::Text("%s", v.first);
+                            if (v.second.first.size()) {
+                                ImGui::Indent();
+                                ImGui::Text("Read Queue:");
+                                ImGui::Indent();
+                                for (auto i : v.second.first) {
+                                    ImGui::Text("pid=%d", i);
+                                }
+                                ImGui::Unindent();
+                                ImGui::Unindent();
+                            }
+                            if (v.second.second.size()) {
+                                ImGui::Indent();
+                                ImGui::Text("Write Queue:");
+                                ImGui::Indent();
+                                for (auto i : v.second.second) {
+                                    ImGui::Text("pid=%d", i);
+                                }
+                                ImGui::Unindent();
+                                ImGui::Unindent();
+                            }
+                        }
                     }
-                    if (ImGui::CollapsingHeader("New...", ImGuiTreeNodeFlags_None))
+                    if (ImGui::CollapsingHeader("New..."))
                     {
                         if (ImGui::BeginTabBar("Toolbox_tabs", tabs_flags))
                         {
@@ -513,7 +544,7 @@ void main_window(Kernel* kernel) {
                     /*if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_None)) {
 
                     }*/
-                    if (ImGui::CollapsingHeader("File System", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::CollapsingHeader("File System")) {
                         ImGui::InputTextWithHint("##cd", "Change Directory", cd_buf,
                             FS::MAX_NAME_LEN);
                         ImGui::SameLine();
@@ -531,6 +562,8 @@ void main_window(Kernel* kernel) {
                         now_tree_node = tree_root;
                         stack<TreeItem*> stk;
                         bool drawing = true;
+                        int in = 0;
+                        int pop = 0;
                         while (now_tree_node || stk.size()) {
                             while (now_tree_node)
                             {
@@ -584,6 +617,7 @@ void main_window(Kernel* kernel) {
                                         break;
                                     }
                                     else {
+                                        in++;
                                         if (ImGui::BeginPopupContextItem(dummy_labels[dummy_index++]))
                                         {
                                             if (ImGui::Selectable("Delete")) {
@@ -591,6 +625,10 @@ void main_window(Kernel* kernel) {
                                             }
                                             ImGui::EndPopup();
                                         }
+                                    }
+                                    if (!now_tree_node->firstchild) {
+                                        ImGui::TreePop();
+                                        pop++;
                                     }
                                     
                                 }
@@ -601,12 +639,58 @@ void main_window(Kernel* kernel) {
                             {
                                 now_tree_node = stk.top();
                                 stk.pop();
-                                if (!now_tree_node->next_sibling) ImGui::TreePop();
+                                if (!now_tree_node->next_sibling) {
+                                    ImGui::TreePop();
+                                    pop++;
+                                }
                                 now_tree_node = now_tree_node->next_sibling;
                             }
                         }
+                        ImGui::TreePush();
+                        //ImGui::Text("%d->%d", in, pop);
+                        if (file_editor) {
+                            if (!mem_set) {
+                                memset(buf_fstree, 0, FS::BLK_SIZE * FS::MAX_N_BLKS);
+                                kernel->fs->read(fs_node_full_path, buf_fstree, 0, -1);
+                                mem_set = true;
+                            }
+                            ImGui::Separator();
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX());
+                            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+                            ImGui::BeginChild("File Viewer",
+                                ImVec2(ImGui::GetWindowContentRegionWidth(), -1), true);
+                            ImGui::Text("%s", fs_node_full_path);
+                            ImGui::Separator();
+
+                            if (ImGui::Button("Edit File")) {
+                                edit = true;
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("Save")) {
+                                if (edit) {
+                                    kernel->fs->write(fs_node_full_path,
+                                        buf_fstree, 0, strlen(buf_fstree));
+                                }
+                            }
+
+                            ImGui::Separator();
+                            ImGui::InputTextMultiline(fs_node_full_path.c_str(),
+                                buf_fstree, FS::BLK_SIZE * FS::MAX_N_BLKS,
+                                ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
+                                edit ? ImGuiInputTextFlags_AllowTabInput :
+                                ImGuiInputTextFlags_ReadOnly);
+                            ImGui::Separator();
+
+                            if (ImGui::Button("Close(Without Saving)")) {
+                                file_editor = false;
+                                mem_set = false;
+                                edit = false;
+                            }
+                            ImGui::EndChild();
+                            ImGui::PopStyleVar();
+                        }
                     }
-                    if (ImGui::CollapsingHeader("Devices", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::CollapsingHeader("Devices")) {
                         ImGui::InputTextWithHint("##Mount", "Device Name", mount_buf, 120);
                         ImGui::SameLine();
                         if (ImGui::Button("Mount")) {
@@ -631,54 +715,7 @@ void main_window(Kernel* kernel) {
                                 }
                                 ImGui::TreePop();
                             }
-                            /*if (ImGui::BeginPopupContextItem("device rightclick"))
-                            {
-                                if (ImGui::Selectable("Unmount")) {
-                                    kernel->del_device(v.first);
-                                }
-                            }*/
                         }
-                    }
-                    if (file_editor) {
-                        if (!mem_set) {
-                            memset(buf_fstree, 0, FS::BLK_SIZE* FS::MAX_N_BLKS);
-                            kernel->fs->read(fs_node_full_path, buf_fstree, 0, -1);
-                            mem_set = true;
-                        }
-                        ImGui::Separator();
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (float)20);
-                        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-                        ImGui::BeginChild("File Viewer",
-                            ImVec2(ImGui::GetWindowContentRegionWidth(), -1), true);
-                        ImGui::Text("%s", fs_node_full_path);
-                        ImGui::Separator();
-
-                        if (ImGui::Button("Edit File")) {
-                            edit = true;
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Save")) {
-                            if (edit) {
-                                kernel->fs->write(fs_node_full_path,
-                                    buf_fstree, 0, strlen(buf_fstree));
-                            }
-                        }
-
-                        ImGui::Separator();
-                        ImGui::InputTextMultiline(fs_node_full_path.c_str(),
-                            buf_fstree, FS::BLK_SIZE * FS::MAX_N_BLKS,
-                            ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
-                            edit ? ImGuiInputTextFlags_AllowTabInput :
-                            ImGuiInputTextFlags_ReadOnly);
-                        ImGui::Separator();
-
-                        if (ImGui::Button("Close(Without Saving)")) {
-                            file_editor = false;
-                            mem_set = false;
-                            edit = false;
-                        }
-                        ImGui::EndChild();
-                        ImGui::PopStyleVar();
                     }
                     ImGui::End();
 
@@ -803,8 +840,9 @@ void main_window(Kernel* kernel) {
                         ImGuiCond_Once);
                     ImPlot::SetNextPlotLimitsY(-0.5, 
                         max(4.5 , g_history.size() + 0.5), ImGuiCond_Always);
+                    ImPlot::SetNextPlotFormatX("%.0f");
                     ImPlot::SetNextPlotTicksX(x_clock, kernel_clock, 
-                        kernel_clock - x_clock + 1, tlabels);
+                        kernel_clock - x_clock + 1);
                     ImPlot::SetNextPlotTicksY(0, max(1, g_history.size() - 1),
                         g_history.size(), plabels);
                     ImPlot::FitNextPlotAxes();
@@ -860,7 +898,6 @@ void main_window(Kernel* kernel) {
                             ImPlot::PopPlotClipRect();
                             int tick = static_cast<int>(mouse.x) - 1;
                             int pentry = static_cast<int>(mouse.y);
-                         
                             if (pentry < g_history.size()) {
                                 string name = string(plabels[pentry]);
                                 int pid = -1;
@@ -870,16 +907,19 @@ void main_window(Kernel* kernel) {
                                         break;
                                     }
                                 }
-                                tick = tick - g_history[pid][0].clock + 1;
-                                if (pid != -1 
-                                    && tick >= 0
-                                    && tick < g_history[pid].size()) {
-                                    ImGui::BeginTooltip();
-                                    ImGui::Text("pid:   %d", pid);
-                                    ImGui::Text("name:  %s", name);
-                                    ImGui::Text("state: %s", states[g_history[pid][tick].pstate]);
-                                    ImGui::Text("clock: %d", g_history[pid][tick].clock);
-                                    ImGui::EndTooltip();
+                                tick = tick + x_clock;
+                                
+                                if (pid != -1) {
+                                    auto h_i = find_if(g_history[pid].begin(), g_history[pid].end(),
+                                        [tick](struct g_entry e) { return e.clock == tick; });
+                                    if (h_i != g_history[pid].end()) {
+                                        ImGui::BeginTooltip();
+                                        ImGui::Text("pid:   %d", pid);
+                                        ImGui::Text("name:  %s", name);
+                                        ImGui::Text("state: %s", states[(*h_i).pstate]);
+                                        ImGui::Text("clock: %d", (*h_i).clock);
+                                        ImGui::EndTooltip();
+                                    }
                                 }
                             }
                         }
@@ -899,7 +939,6 @@ void main_window(Kernel* kernel) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
     }
-
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();

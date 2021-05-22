@@ -51,4 +51,5 @@ public:
 	void new_device(string name);
 	int del_device(string name);
 	vector<pair<string, vector<pair<int, int>>>> expose_devices();
+	vector<pair<string, pair<list<int>, list<int>>>> expose_sft();
 };

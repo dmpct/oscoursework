@@ -91,17 +91,21 @@ namespace FS {
 
 	struct File {
 		uint32_t offset;
-		uint32_t counter;
-		uint32_t inode;
-		uint16_t r;
-		uint16_t w;
-		uint32_t t_open;
+		string fname;
+		int counter;
+		int rw;
+		int inode;
+	};
+
+	struct QDesc {
+		int pid;
+		int rw;
+		int time;
 	};
 }
 
 class Filesystem {
 private:
-	vector<struct FS::File*> file_table;
 	uint64_t uid;
 	struct FS::Superblock* sb;
 	char* imap;
@@ -110,9 +114,11 @@ private:
 	struct FS::Inode* pwd_inode;
 	struct FS::Dir* c_dir;
 	void set_pwd_str(string path);
-	mutex file_lock;
+	function<void(int, void*)> idt;
+	vector<struct FS::File*> file_table;
+	vector<pair<list<int>, list<int>>> filequeue;
 public:
-	Filesystem(uint64_t uid);
+	Filesystem(function<void(int, void*)> idt, uint64_t uid);
 	~Filesystem();
 	int walk(string path, struct FS::Inode* inode, struct FS::Dir* dir);
 	int open(string path, int rw, int truncate);
@@ -121,6 +127,8 @@ public:
 	bool fdelete(string path);
 	bool write(string path, char* buf, uint32_t offset, size_t size);
 	int read(string path, char* buf, uint32_t offset, int size);
+	int fread(int fid, int pid, int time);
+	int fwrite(int fid, int size, int pid, int time);
 	int exist(string path);
 	string get_pwd();
 	void set_pwd(string path);
@@ -129,4 +137,27 @@ public:
 	int read_swapspace(string path, char* buf, int blk);
 	void reset_swapspace(string path);
 	void chmod(string path, int mode);
+	void fpop(int pid, int fid, int rw, int size);
+	vector<pair<int, string>> expose_sft() {
+		vector<pair<int, string>> ff;
+		ff.resize(0);
+		const char* status[3] = {
+			"Idle",
+			"Read",
+			"Write"
+		};
+		for (int i = 0; i < file_table.size(); i++) {
+			if (file_table[i]) {
+				string entry = file_table[i]->fname;
+				entry += " Status:";
+				entry += status[file_table[i]->rw];
+				ff.push_back({ i, entry });
+			}
+		}
+		
+		return ff;
+	}
+	vector<pair<list<int>, list<int>>> expose_sft_queue() {
+		return filequeue;
+	}
 };
