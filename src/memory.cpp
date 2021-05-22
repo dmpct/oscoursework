@@ -63,7 +63,7 @@ int PhysMemoryModel::swap_in(MM::phys_addr from, function<void(int, void*)> idt,
 
 bool PageMemoryModel::pg_swap_out(int pg) {
 	//cout << "swap out: " << pg << endl;
-	if (pgtable[pg]->locked) return false;
+	//if (pgtable[pg]->locked) return false;
 	/*if (freepgs.size() >= (pgtable.size() / 4)) {
 		pgtable[pg]->refed = 1;
 		pgtable[pg]->counter = 0;
@@ -88,6 +88,7 @@ bool PageMemoryModel::pg_swap_out(int pg) {
 	ss->blk = fs;
 	ss->desc = pgtable[pg];
 	pgtable[pg] = new struct Page;
+	freepgs.push_back(pg);
 	swaptable.push_back(ss);
 	int res = swap_out(pg * MM::PAGE_SIZE, idt, fs);
 	return res == 0;
@@ -165,7 +166,7 @@ int PageMemoryModel::alloc_page() {
 		int spg = -1;
 		for (int i = 0; i < pgtable.size(); i++) {
 			auto pg = pgtable[i];
-			if (!pg->locked && pg->refed && !pg->counter) {
+			if (pg->refed && !pg->counter) {
 				spg = i;
 				break;
 			}
@@ -220,6 +221,9 @@ void PageMemoryModel::stat() {
 
 bool PageMemoryModel::put(int pg, char* buf, int offset, int size) {
 	lock_guard<mutex> guard(pg_lock);
+	//cout << pg << endl;
+	//Log::i("*** visited pg = %d\n", pg);
+	if (pg == -1) return false;
 	if (pgtable[pg]->locked) {
 		return false;
 	}

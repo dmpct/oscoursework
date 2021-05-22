@@ -122,6 +122,7 @@ public:
 	uint16_t fork(uint16_t ppid);
 	void fork();
 	bool exec(string path, uint16_t pid);
+	bool exec_wp(string path, uint16_t pid, string pwd);
 	void set_pending(int pid);
 	void set_serv();
 	void wake(int pid);

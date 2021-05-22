@@ -14,7 +14,7 @@ void ask_for_options(Term::Terminal* term,
 	bool set2 = false;
 	while (!set1) {
 		string answer = Term::prompt(*term,
-			"Process schedule mode(FCFS, SJF, RR, PR, MQ): ",
+			"Process schedule mode(FCFS, SJF, RR, PR): ",
 			dummy, dummy2);
 		trim(answer);
 		if (answer == "FCFS") {

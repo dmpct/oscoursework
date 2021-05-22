@@ -362,7 +362,7 @@ void main_window(Kernel* kernel) {
                         ImGui::Text("Process Scheduler: %s", alg.first.c_str());
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(100.0f);
-                        ImGui::Combo("##pa", &palg, pas, 5);
+                        ImGui::Combo("##pa", &palg, pas, 4);
                         ImGui::Text("Memory Allocator: %s", alg.second.c_str());
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(100.0f);
@@ -377,7 +377,7 @@ void main_window(Kernel* kernel) {
                         for (auto v : sft_info) {
                             ImGui::Bullet();
                             ImGui::SameLine();
-                            ImGui::Text("%s", v.first);
+                            ImGui::Text("%s", v.first.c_str());
                             if (v.second.first.size()) {
                                 ImGui::Indent();
                                 ImGui::Text("Read Queue:");
@@ -586,8 +586,12 @@ void main_window(Kernel* kernel) {
                                             && now_tree_node->name.substr(
                                                 now_tree_node->name.size()-2) == ".p") {
                                             if (ImGui::Selectable("Execute")) {
-                                                kernel->sch->exec(now_tree_node->cat(),
-                                                    kernel->sch->fork(1));
+                                                string name = now_tree_node->cat();
+                                                string path = now_tree_node->parent ?
+                                                    now_tree_node->parent->cat() : "/";
+                                                kernel->sch->exec_wp(name,
+                                                    kernel->sch->fork(1),
+                                                    path);
                                             }
                                         }
                                         
@@ -744,17 +748,6 @@ void main_window(Kernel* kernel) {
                                 if (ImGui::BeginPopup("PrOps")) {
                                     if (ImGui::Selectable("Kill")) {
                                         kernel->sch->safe_kill(stoi(v[0]));
-                                    }
-                                    if (ImGui::Selectable("Force Swapout")) {
-                                        ImGui::OpenPopup("Info");
-                                    }
-                                    if (ImGui::BeginPopupModal("Info", 0,
-                                        ImGuiWindowFlags_AlwaysAutoResize)) {
-                                        ImGui::Text("Swapping-out Not Implemented Yet.\n");
-                                        if (ImGui::Button("OK", ImVec2(120, 0))) {
-                                            ImGui::CloseCurrentPopup();
-                                        }
-                                        ImGui::EndPopup();
                                     }
                                     ImGui::EndPopup();
                                 }

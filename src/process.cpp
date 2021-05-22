@@ -75,6 +75,41 @@ bool Scheduler::exec(string path, uint16_t pid) {
 	}
 }
 
+bool Scheduler::exec_wp(string path, uint16_t pid, string pwd) {
+	Process* pr = prlist[pid];
+	struct args {
+		string path;
+		VirtMemoryModel* mm;
+		int et;
+		int pri;
+		int state;
+		string pwd;
+	} args;
+	args.path = path;
+	args.mm = pr->mem;
+	args.state = 0;
+	idt(INTN::INT::REQ_LOAD, &args);
+	pr->pwd = pwd;
+	if (args.state) {
+		auto pos = path.rfind("/");
+		if (pos != string::npos) pr->name = path.substr(pos + 1);
+		else pr->name = path;
+		pr->state = PR::READY;
+		pr->priority = args.pri;
+		pr->est = args.et;
+		if (!(algo == PR::Algorithm::MIXED_QUEUE)) ready.push_back(pid);
+		else {
+			if (prlist[pid]->priority <= 3) high_pr.push_back(pid);
+			else if (prlist[pid]->priority <= 6) mid_pr.push_back(pid);
+			else low_pr.push_back(pid);
+		}
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
 bool Scheduler::kill(uint16_t pid) {
 	if (prlist[pid]) {
 		doneprs++;
@@ -337,10 +372,21 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			int bytes;
 		}*info = new struct info;
 		res = prlist[running]->run(0, info);
-		//prlist[running]->est--;
 		switch (res) {
-		case 0: { // cpu occupied
-			//set_pending();
+		case 0: {
+			if (info->cmd == 'r' || info->cmd == 'w') {
+				struct args {
+					int pid;
+					int fid;
+					int rw;
+					int size;
+				} arg;
+				arg.pid = running;
+				arg.fid = info->bytes;
+				arg.rw = info->cmd == 'r' ? 1 : 2;
+				arg.size = info->time;
+				idt(INTN::INT::FILE_DONE, &arg);
+			}
 			break;
 		}
 		case 1: { // ?suspended waiting
@@ -367,22 +413,81 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			break;
 		}
 		case 2: { // read
-			[[fallthrough]];
-		}
-		case 3: { // write
-			prlist[running]->state = PR::WAITING;
-			waiting.push_back(running);
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
 			struct args {
 				int pid;
+				int fid;
 				int time;
-				int did;
-			} args;
-			args.pid = running;
-			args.time = info->time;
-			args.did = 2;
-			idt(INTN::INT::DEVICE_REQ, &args);
-			running = -1;
-			schedule(clock);
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			idt(INTN::INT::REQ_FILE_READ, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				prlist[running]->workload--;
+			}
+			break;
+		}
+		case 3: { // write
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
+			struct args {
+				int pid;
+				int fid;
+				int time;
+				int bytes;
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			args2.bytes = info->bytes;
+			idt(INTN::INT::REQ_FILE_WRITE, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				prlist[running]->workload--;
+			}
 			break;
 		}
 		case 5: { // fault
@@ -444,12 +549,23 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			string fname;
 			int bytes;
 		}*info = new struct info;
-		res = prlist[running]->run(PR::RR_TP, info);
-		//prlist[running]->est--;
+		res = prlist[running]->run(0, info);
 		switch (res) {
-		case 0: { // cpu occupied
-			//set_pending();
+		case 0: {
 			cur_tp--;
+			if (info->cmd == 'r' || info->cmd == 'w') {
+				struct args {
+					int pid;
+					int fid;
+					int rw;
+					int size;
+				} arg;
+				arg.pid = running;
+				arg.fid = info->bytes;
+				arg.rw = info->cmd == 'r' ? 1 : 2;
+				arg.size = info->time;
+				idt(INTN::INT::FILE_DONE, &arg);
+			}
 			break;
 		}
 		case 1: { // ?suspended waiting
@@ -476,22 +592,83 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			break;
 		}
 		case 2: { // read
-			[[fallthrough]];
-		}
-		case 3: { // write
-			prlist[running]->state = PR::WAITING;
-			waiting.push_back(running);
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
 			struct args {
 				int pid;
+				int fid;
 				int time;
-				int did;
-			} args;
-			args.pid = running;
-			args.time = info->time;
-			args.did = 2;
-			idt(INTN::INT::DEVICE_REQ, &args);
-			running = -1;
-			schedule(clock);
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			idt(INTN::INT::REQ_FILE_READ, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				cur_tp--;
+				prlist[running]->workload--;
+			}
+			break;
+		}
+		case 3: { // write
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
+			struct args {
+				int pid;
+				int fid;
+				int time;
+				int bytes;
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			args2.bytes = info->bytes;
+			idt(INTN::INT::REQ_FILE_WRITE, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				cur_tp--;
+				prlist[running]->workload--;
+			}
 			break;
 		}
 		case 5: { // fault
@@ -539,10 +716,21 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			int bytes;
 		}*info = new struct info;
 		res = prlist[running]->run(0, info);
-		//prlist[running]->est--;
 		switch (res) {
-		case 0: { // cpu occupied
-			//set_pending();
+		case 0: {
+			if (info->cmd == 'r' || info->cmd == 'w') {
+				struct args {
+					int pid;
+					int fid;
+					int rw;
+					int size;
+				} arg;
+				arg.pid = running;
+				arg.fid = info->bytes;
+				arg.rw = info->cmd == 'r' ? 1 : 2;
+				arg.size = info->time;
+				idt(INTN::INT::FILE_DONE, &arg);
+			}
 			break;
 		}
 		case 1: { // ?suspended waiting
@@ -569,22 +757,81 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 			break;
 		}
 		case 2: { // read
-			[[fallthrough]];
-		}
-		case 3: { // write
-			prlist[running]->state = PR::WAITING;
-			waiting.push_back(running);
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
 			struct args {
 				int pid;
+				int fid;
 				int time;
-				int did;
-			} args;
-			args.pid = running;
-			args.time = info->time;
-			args.did = 2;
-			idt(INTN::INT::DEVICE_REQ, &args);
-			running = -1;
-			schedule(clock);
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			idt(INTN::INT::REQ_FILE_READ, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				prlist[running]->workload--;
+			}
+			break;
+		}
+		case 3: { // write
+			string fn = info->fname;
+			auto v = find_if(prlist[running]->open_files.begin(),
+				prlist[running]->open_files.end(),
+				[fn](pair<string, int> ff) { return ff.first == fn; });
+			if (v == prlist[running]->open_files.end()) {
+				struct args {
+					int pid;
+					string fname;
+					int fid;
+				} args;
+				args.pid = running;
+				args.fname = fn;
+				idt(INTN::INT::REQ_FILE_OPEN, &args);
+				prlist[running]->open_files.push_back({ fn, args.fid });
+				v = prlist[running]->open_files.end() - 1;
+			}
+			struct args {
+				int pid;
+				int fid;
+				int time;
+				int bytes;
+				int state;
+			} args2;
+			args2.pid = running;
+			args2.fid = (*v).second;
+			args2.time = info->time;
+			args2.bytes = info->bytes;
+			idt(INTN::INT::REQ_FILE_WRITE, &args2);
+			if (args2.state == 1) {
+				prlist[running]->state = PR::WAITING;
+				waiting.push_back(running);
+				running = -1;
+				schedule(clock);
+			}
+			else {
+				prlist[running]->workload--;
+			}
 			break;
 		}
 		case 5: { // fault
@@ -722,7 +969,8 @@ void Scheduler::schedule(PR::Timepiece time) { // todo: remove reschedule after 
 }
 
 double Scheduler::cpu_rate() {
-	return cpu_piece ? 1 - (idle_piece / cpu_piece) : 0;
+	return cpu_piece ? 
+		100.0 - 100.0 * (static_cast<double>(idle_piece) / (cpu_piece + 1)) : 0;
 }
 
 void Scheduler::set_pending(int pid) {

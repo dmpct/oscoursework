@@ -161,7 +161,6 @@ void Kernel::int_handler(int int_type, void* args) { // interrupt callback
 			int addr;
 			int size;
 		}*ss = static_cast<struct ss*>(args);
-		//cout << "page fault" << endl;
 		ss->pg = pg->alloc_page();
 		pg->put(ss->pg, ss->buf, ss->addr, ss->size);
 		break;
@@ -389,7 +388,7 @@ int Kernel::load_prog(string path, VirtMemoryModel* mm, int* et, int* pri) {
 			strcpy(sp, f.c_str());
 			sp += (f.size() + 1);
 			string as = args.substr(pos + 1);
-			pos = args.find(" ");
+			pos = as.find(" ");
 			if (pos == string::npos) {
 				delete[] buf;
 				return 0;

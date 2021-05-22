@@ -353,6 +353,7 @@ int Filesystem::walk(string path, struct FS::Inode* inode, struct FS::Dir* dir) 
 
 int Filesystem::fread(int fid, int pid, int time) {
 	int state = 1;
+	if (fid < 0 || fid > file_table.size()) return 0;
 	if (file_table[fid]->rw != 2) { // free
 		file_table[fid]->rw = 1;
 		state = 0;
@@ -363,6 +364,7 @@ int Filesystem::fread(int fid, int pid, int time) {
 
 int Filesystem::fwrite(int fid, int size, int pid, int time) {
 	int state = 1;
+	if (fid < 0 || fid > file_table.size()) return 0;
 	if (file_table[fid]->rw == 0) { // free
 		file_table[fid]->rw = 2;
 		//char* dummy = new char[size];
@@ -374,6 +376,8 @@ int Filesystem::fwrite(int fid, int size, int pid, int time) {
 }
 
 void Filesystem::fpop(int pid, int fid, int rw, int size) {
+	Log::i("*** fpoped %d\n", fid);
+	if (fid < 0 || fid > file_table.size()) return;
 	if (rw == 1) {
 		filequeue[fid].first.remove(pid);
 		if (!filequeue[fid].first.size()) {
@@ -398,7 +402,6 @@ void Filesystem::fpop(int pid, int fid, int rw, int size) {
 }
 
 int Filesystem::open(string path, int rw, int truncate) {
-	
 	struct FS::Inode* inode = new struct FS::Inode;
 	struct FS::Dir* d = new struct FS::Dir[8];
 	int index = walk(path, inode, d);
