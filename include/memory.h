@@ -178,7 +178,7 @@ public:
 	void set_blocks(int blks);
 	bool write_page(int pg, char* buf, MM::log_addr addr, int size);
 	bool write(MM::virt_addr addr, char* buf, int size);
-	void load(char* buf, int size);
+	bool load(char* buf, int size);
 	void stat(int pid, string name);
 	vector<vector<string>> mm_expose(int pid, string name);
 	void chalg(MM::Algorithm newalg);

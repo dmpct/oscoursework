@@ -406,16 +406,10 @@ int Kernel::load_prog(string path, VirtMemoryModel* mm, int* et, int* pri) {
 			return 0;
 		}
 	}
-	mm->load(buf_r, static_cast<int>(p - buf_r));
-	/*auto pp = buf_r;
-	cout << "Compiled:" << endl;
-	while (pp != p) {
-		if (32 <= *pp && *pp <= 126)
-			cout << *pp;
-		else cout << '_';
-		pp++;
+	if (!mm->load(buf_r, static_cast<int>(p - buf_r))) {
+		sch->oom_killer();
+		mm->load(buf_r, static_cast<int>(p - buf_r));
 	}
-	cout << endl;*/
 	delete[] buf_r;
 	delete[] buf;
 	return 1;

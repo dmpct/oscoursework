@@ -512,7 +512,7 @@ bool VirtMemoryModel::write(MM::virt_addr addr, char* buf, int size) {
 	return nfault;
 }
 
-void VirtMemoryModel::load(char* buf, int size) {
+bool VirtMemoryModel::load(char* buf, int size) {
 	write(0, buf, size);
 }
 

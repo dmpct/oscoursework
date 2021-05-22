@@ -128,6 +128,7 @@ public:
 	void wake(int pid);
 	bool kill(uint16_t pid);
 	bool safe_kill(uint16_t pid);
+	void oom_killer();
 	void schedule(PR::Timepiece time);
 	void read_table();
 	void print_mem();

@@ -75,6 +75,12 @@ bool Scheduler::exec(string path, uint16_t pid) {
 	}
 }
 
+void Scheduler::oom_killer() {
+	auto k = max_element(prlist.begin(), prlist.end(),
+		[](Process* p) {return p->mem->get_nmapped(); });
+	safe_kill((*k)->pid);
+}
+
 bool Scheduler::exec_wp(string path, uint16_t pid, string pwd) {
 	Process* pr = prlist[pid];
 	struct args {
